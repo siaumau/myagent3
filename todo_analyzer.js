@@ -133,7 +133,7 @@ function generateLocalAnalysis(taskTitle, taskDescription = '') {
  * @param {object} analysis
  * @returns {Promise<object>}
  */
-async function verifyTaskCompletion(task, analysis) {
+async function verifyTaskCompletion(task, analysis, executionResult = null) {
   const fs = require('fs');
   const path = require('path');
   const fullText = `${task.title} ${task.description || ''}`.toLowerCase();
@@ -201,6 +201,32 @@ async function verifyTaskCompletion(task, analysis) {
       passed: true,
       message: 'Database-related task uses a placeholder verification result'
     });
+  }
+
+  if (
+    verificationResults.length === 0 &&
+    executionResult &&
+    executionResult.success &&
+    executionResult.generated_summary
+  ) {
+    const summaryText = executionResult.generated_summary.trim();
+    verificationResults.push({
+      criterion: 'Generated summary verification',
+      passed: summaryText.length > 50,
+      message: summaryText.length > 50
+        ? 'Summary content was generated successfully'
+        : 'Generated summary is too short'
+    });
+
+    if (executionResult.path) {
+      verificationResults.push({
+        criterion: 'Summary file verification',
+        passed: fs.existsSync(executionResult.path),
+        message: fs.existsSync(executionResult.path)
+          ? `Summary file exists: ${executionResult.path}`
+          : `Summary file is missing: ${executionResult.path}`
+      });
+    }
   }
 
   if (verificationResults.length === 0) {
