@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>AI Chat Demo - Function Calling</title>
     <link rel="stylesheet" href="/styles.css">
-    <!-- 引入 marked.js 用於 Markdown 渲染 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
@@ -15,7 +14,7 @@
           <div class="logo">AI</div>
           <div>
             <div class="title">AI Chat Demo</div>
-            <div class="small">Context + Function-calling 示範</div>
+            <div class="small">Context + Function-calling Demo</div>
           </div>
         </div>
         <div class="controls">
@@ -28,79 +27,74 @@
           <div id="messages" class="messages"></div>
 
           <div class="composer">
-            <input id="input" class="input" autocomplete="off" placeholder="輸入訊息，例如：請問現在時間或查詢台中天氣" />
+            <input id="input" class="input" autocomplete="off" placeholder="輸入訊息，例如查詢時間、天氣或資料庫..." />
             <button id="send" class="send">送出</button>
           </div>
 
-          <!-- 快速提交按鈕 -->
           <div class="quick-actions">
-            <button class="quick-btn" data-message="現在時間">⏰ 現在時間</button>
-            <button class="quick-btn" data-message="世界新聞">🌍 世界新聞</button>
-            <button class="quick-btn" data-message="openclaw 最新新聞">📰 openclaw 最新新聞</button>
-            <button class="quick-btn" data-message="彰化天氣空氣品質">🌤️ 彰化天氣空氣品質</button>
-            <button class="quick-btn" data-message="查詢當前資料庫中挖土機有哪些型號呢？">📖 挖土機手冊</button>
+            <button class="quick-btn" data-message="現在時間">現在時間</button>
+            <button class="quick-btn" data-message="台北天氣">台北天氣</button>
+            <button class="quick-btn" data-message="查看當前的資料夾中有哪些資料">查看目錄</button>
+            <button class="quick-btn" data-message="幫我查一下資料庫 柳工有哪些機型">查詢資料庫</button>
           </div>
         </div>
 
         <div class="right-panel">
-          <!-- Todo List Panel -->
           <div class="panel todo-panel">
-            <h3>📋 Todo List <span id="todo-count" class="badge">0</span></h3>
+            <h3>Todo List <span id="todo-count" class="badge">0</span></h3>
             <div class="todo-input-row">
               <input id="todo-title" class="todo-input" placeholder="新增待辦事項..." />
               <button id="todo-add" class="btn-add">+</button>
             </div>
             <div id="todo-list" class="todo-list"></div>
             <div class="todo-actions">
-              <button id="todo-refresh" class="btn-small">🔄 刷新</button>
-              <button id="todo-scheduler-status" class="btn-small">📊 排程器</button>
+              <button id="todo-refresh" class="btn-small">刷新</button>
+              <button id="todo-history-toggle" class="btn-small">歷史任務</button>
+              <button id="todo-scheduler-status" class="btn-small">排程器</button>
             </div>
           </div>
 
           <div class="panel">
             <h3>System</h3>
-            <div class="system-note">範例：輸入「現在時間」或「查詢 infor.txt」來觸發 function-calling。可啟用 `RECORD_CONTEXT` 以記錄上下文。</div>
+            <div class="system-note">支援 function calling、待辦排程與 context 檢視。</div>
           </div>
 
           <div class="panel">
             <h3>Context Inspector</h3>
-            <button id="open-context" class="btn-context">🔍 查看 Context</button>
+            <button id="open-context" class="btn-context">查看 Context</button>
           </div>
         </div>
 
-        <!-- Context 彈窗 -->
         <div id="context-modal" class="modal">
           <div class="modal-content">
             <div class="modal-header">
-              <h3>📄 Context Inspector</h3>
+              <h3>Context Inspector</h3>
               <button id="close-context" class="btn-close">&times;</button>
             </div>
             <div id="contextJson" class="context-json"></div>
           </div>
         </div>
 
-        <!-- Todo Detail Modal -->
         <div id="todo-modal" class="modal">
           <div class="modal-content modal-large">
             <div class="modal-header">
-              <h3>📝 任務詳情</h3>
+              <h3>任務詳情</h3>
               <button id="close-todo-modal" class="btn-close">&times;</button>
             </div>
             <div id="todoDetail" class="todo-detail"></div>
           </div>
         </div>
 
-        <!-- Scheduler Status Modal -->
         <div id="scheduler-modal" class="modal">
           <div class="modal-content">
             <div class="modal-header">
-              <h3>📊 排程器狀態</h3>
+              <h3>排程器狀態</h3>
               <button id="close-scheduler-modal" class="btn-close">&times;</button>
             </div>
             <div id="schedulerStatus" class="scheduler-status"></div>
             <div class="scheduler-actions">
-              <button id="scheduler-stop" class="btn-warning">⏸️ 暫停</button>
-              <button id="scheduler-start" class="btn-success">▶️ 啟動</button>
+              <button id="scheduler-stop" class="btn-warning">停止</button>
+              <button id="scheduler-start" class="btn-success">啟動</button>
             </div>
           </div>
         </div>

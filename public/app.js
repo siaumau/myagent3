@@ -12,6 +12,7 @@ const todoAddBtn = document.getElementById('todo-add');
 const todoListEl = document.getElementById('todo-list');
 const todoCountEl = document.getElementById('todo-count');
 const todoRefreshBtn = document.getElementById('todo-refresh');
+const todoHistoryToggleBtn = document.getElementById('todo-history-toggle');
 const todoSchedulerBtn = document.getElementById('todo-scheduler-status');
 const todoModal = document.getElementById('todo-modal');
 const todoDetailEl = document.getElementById('todoDetail');
@@ -24,6 +25,7 @@ const schedulerStopBtn = document.getElementById('scheduler-stop');
 
 let context = [];
 let todos = [];
+let showTodoHistory = false;
 
 function timeNow() {
   return new Date().toLocaleTimeString();
@@ -208,8 +210,15 @@ async function fetchTodos() {
 function renderTodoList() {
   if (!todoListEl) return;
 
-  const pendingTodos = todos.filter(t => t.status !== 'completed');
+  const pendingTodos = showTodoHistory
+    ? todos.filter(t => t.status === 'completed' || t.status === 'failed')
+    : todos.filter(t => t.status !== 'completed' && t.status !== 'failed');
   todoCountEl.textContent = pendingTodos.length;
+
+  if (todoHistoryToggleBtn) {
+    todoHistoryToggleBtn.classList.toggle('active', showTodoHistory);
+    todoHistoryToggleBtn.textContent = showTodoHistory ? '待辦任務' : '歷史任務';
+  }
 
   if (pendingTodos.length === 0) {
     todoListEl.innerHTML = '<div class="todo-empty">暫無待辦事項</div>';
@@ -433,6 +442,13 @@ if (todoRefreshBtn) {
   todoRefreshBtn.addEventListener('click', fetchTodos);
 }
 
+if (todoHistoryToggleBtn) {
+  todoHistoryToggleBtn.addEventListener('click', () => {
+    showTodoHistory = !showTodoHistory;
+    renderTodoList();
+  });
+}
+
 if (todoSchedulerBtn) {
   todoSchedulerBtn.addEventListener('click', () => {
     fetchSchedulerStatus();
@@ -473,6 +489,59 @@ schedulerModal.addEventListener('click', (e) => {
     schedulerModal.classList.remove('show');
   }
 });
+
+function renderTodoList() {
+  if (!todoListEl) return;
+
+  const visibleTodos = showTodoHistory
+    ? todos.filter(t => t.status === 'completed' || t.status === 'failed')
+    : todos.filter(t => t.status !== 'completed' && t.status !== 'failed');
+
+  todoCountEl.textContent = visibleTodos.length;
+
+  if (todoHistoryToggleBtn) {
+    todoHistoryToggleBtn.classList.toggle('active', showTodoHistory);
+    todoHistoryToggleBtn.textContent = showTodoHistory ? '待辦任務' : '歷史任務';
+  }
+
+  if (visibleTodos.length === 0) {
+    todoListEl.innerHTML = showTodoHistory
+      ? '<div class="todo-empty">暫無歷史任務</div>'
+      : '<div class="todo-empty">暫無待辦事項</div>';
+    return;
+  }
+
+  todoListEl.innerHTML = visibleTodos.map(todo => `
+    <div class="todo-item todo-item-${todo.status}" data-id="${todo.id}">
+      <div class="todo-item-header">
+        <span class="todo-item-title">${escapeHtml(todo.title)}</span>
+        <span class="todo-item-status status-${todo.status}">${getStatusText(todo.status)}</span>
+      </div>
+      <div class="todo-item-meta">
+        <span class="priority-${todo.priority}">🏷️ ${getPriorityText(todo.priority)}</span>
+        <span>🕐 ${formatTime(todo.created_at)}</span>
+      </div>
+      <div class="todo-item-actions">
+        <button class="btn-view" data-id="${todo.id}">查看</button>
+        ${todo.status === 'pending' ? `<button class="btn-delete" data-id="${todo.id}">刪除</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  todoListEl.querySelectorAll('.btn-view').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = parseInt(e.target.dataset.id);
+      viewTodoDetail(id);
+    });
+  });
+
+  todoListEl.querySelectorAll('.btn-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = parseInt(e.target.dataset.id);
+      deleteTodo(id);
+    });
+  });
+}
 
 // Initial load
 fetchTodos();

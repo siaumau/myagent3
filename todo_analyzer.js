@@ -141,17 +141,19 @@ async function verifyTaskCompletion(task, analysis) {
   const criteria = analysis?.verification_criteria || ['Requested outcome exists and matches the task'];
   const requestedFileName = extractRequestedFileName(task, analysis);
   const expectsEmptyFile = taskRequestsEmptyFile(task, analysis);
+  const expectedKeywords = extractVerificationKeywords(task, analysis);
 
   if (requestedFileName) {
     const filePath = path.join(process.cwd(), requestedFileName);
     let fileExists = false;
     let fileNotEmpty = false;
+    let fileContent = '';
 
     try {
       fileExists = fs.existsSync(filePath);
       if (fileExists) {
-        const content = fs.readFileSync(filePath, 'utf8');
-        fileNotEmpty = content.trim().length > 0;
+        fileContent = fs.readFileSync(filePath, 'utf8');
+        fileNotEmpty = fileContent.trim().length > 0;
       }
     } catch (err) {
       verificationResults.push({
@@ -178,6 +180,18 @@ async function verifyTaskCompletion(task, analysis) {
         passed,
         message
       });
+
+      if (fileExists && fileNotEmpty && expectedKeywords.length > 0) {
+        const contentLower = fileContent.toLowerCase();
+        const matchedKeywords = expectedKeywords.filter(keyword => contentLower.includes(keyword));
+        verificationResults.push({
+          criterion: `Content relevance: ${requestedFileName}`,
+          passed: matchedKeywords.length > 0,
+          message: matchedKeywords.length > 0
+            ? `File content matches expected topic keywords: ${matchedKeywords.join(', ')}`
+            : `File content does not include expected topic keywords: ${expectedKeywords.join(', ')}`
+        });
+      }
     }
   }
 
@@ -240,6 +254,33 @@ function taskRequestsEmptyFile(task, analysis) {
     combinedText.includes('empty') ||
     combinedText.includes('blank')
   );
+}
+
+function extractVerificationKeywords(task, analysis) {
+  const combinedText = [
+    task?.title || '',
+    task?.description || '',
+    ...(analysis?.execution_plan || [])
+  ].join(' ');
+
+  const keywords = [];
+  const candidatePatterns = [
+    /\bredis\b/gi,
+    /\bmysql\b/gi,
+    /\bpostgres(?:ql)?\b/gi,
+    /\bjavascript\b/gi,
+    /\bnode\.?js\b/gi,
+    /\bpython\b/gi
+  ];
+
+  for (const pattern of candidatePatterns) {
+    const matches = combinedText.match(pattern);
+    if (matches) {
+      keywords.push(...matches.map(match => match.toLowerCase()));
+    }
+  }
+
+  return [...new Set(keywords)];
 }
 
 module.exports = {
