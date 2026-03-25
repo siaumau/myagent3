@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI Chat Demo - Function Calling</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 20px; }
+      #messages { border: 1px solid #ccc; padding: 10px; height: 300px; overflow: auto; }
+      .msg { margin: 6px 0; }
+      .user { color: blue; }
+      .assistant { color: green; }
+      .system { color: gray; }
+    </style>
+  </head>
+  <body>
+    <h2>簡單線上 AI 聊天示範（Context + Function Calling）</h2>
+    <div id="messages"></div>
+    <form id="form">
+      <input id="input" autocomplete="off" style="width:70%" placeholder="輸入訊息，例如：請問現在時間或查詢 infor.txt 的內容" />
+      <button>送出</button>
+    </form>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
