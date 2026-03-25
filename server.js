@@ -1,9 +1,13 @@
+// Load .env into process.env (if present)
+try { require('dotenv').config(); } catch (e) { /* ignore if not installed */ }
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const ai = require('./ai');
 const axios = require('axios');
 const os = require('os');
+const mysql = require('mysql2/promise');
+const { fetchNews } = require('./news_fetcher');
 
 const app = express();
 app.use(express.json());
@@ -58,6 +62,29 @@ try {
 
 const REMOTE_API_URL = DEFAULT_REMOTE_URL; // may be empty
 
+// Database configuration from .env
+const DB_CONFIG = {
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT) || 3306,
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'testdb',
+  type: process.env.DB_TYPE || 'mysql'
+};
+
+// Define tool descriptions to send to remote LLM when requesting function-calling
+const TOOL_DEFS = (INFOR_JSON && INFOR_JSON.tools) ? INFOR_JSON.tools : [
+  { type: 'function', function: { name: 'get_weather', description: '查詢指定城市的天氣', parameters: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] } } },
+  { type: 'function', function: { name: 'get_time', description: '取得當前時間', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'list_files', description: '列出指定目錄中的檔案和資料夾', parameters: { type: 'object', properties: { path: { type: 'string', description: '目錄路徑，預設為當前目錄' } } } } },
+  { type: 'function', function: { name: 'query_database', description: '查詢資料庫中的資料，可以查詢表內容或搜尋特定資料', parameters: { type: 'object', properties: { table: { type: 'string', description: '要查詢的表名' }, search_value: { type: 'string', description: '要搜尋的值（可選）' }, columns: { type: 'string', description: '要查詢的欄位，預設為 *（可選）' } }, required: ['table'] } } },
+  { type: 'function', function: { name: 'list_tables', description: '列出資料庫中所有的表', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'translate_text', description: '翻譯文字', parameters: { type: 'object', properties: { text: { type: 'string' }, target_lang: { type: 'string' } }, required: ['text','target_lang'] } } },
+  { type: 'function', function: { name: 'write_file', description: '寫入檔案內容', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path','content'] } } },
+  { type: 'function', function: { name: 'append_file', description: '追加內容到檔案', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path','content'] } } },
+  { type: 'function', function: { name: 'read_file', description: '讀取檔案內容', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } }
+];
+
 
 app.post('/chat', async (req, res) => {
   const { message, context } = req.body || {};
@@ -77,30 +104,84 @@ app.post('/chat', async (req, res) => {
         appendContextLog({ ts: new Date().toISOString(), event: 'chat_request', remote: !!REMOTE_API_URL, messages });
       }
 
-      // Build payload using INFOR_JSON defaults if available
+      // Build system message to guide the model
+      const systemMessage = {
+        role: 'system',
+        content: '你是一個智能助手。當用戶查詢天氣或時間時，請使用對應的工具函數。當工具返回結果後，請用簡潔的中文回覆用戶，直接顯示天氣資訊（溫度、濕度、天氣狀況），不要說 "Fetching" 或 "Waiting" 等無意義內容。'
+      };
+      
+      // Insert system message at the beginning
+      const messagesWithSystem = [systemMessage, ...messages];
+
+      // Build payload using INFOR_JSON defaults if available; always include tools definitions
       const payload = {
         model: (INFOR_JSON && INFOR_JSON.model) || 'Qwen2.5-3B-Instruct',
-        messages,
+        messages: messagesWithSystem,
+        tools: TOOL_DEFS,
         tool_choice: (INFOR_JSON && INFOR_JSON.tool_choice) || 'auto',
         temperature: (INFOR_JSON && INFOR_JSON.temperature) || 0.2
       };
-      if (INFOR_JSON && INFOR_JSON.tools) payload.tools = INFOR_JSON.tools;
 
       const headers = { 'Content-Type': 'application/json' };
       if (process.env.API_KEY) headers['Authorization'] = `Bearer ${process.env.API_KEY}`;
 
+      // 記錄發送給大語言模型的請求
+      const requestLog = {
+        ts: new Date().toISOString(),
+        event: 'llm_request',
+        url: REMOTE_API_URL,
+        request: payload
+      };
+      appendContextLog(requestLog);
+
+      console.log('[remote] POST', REMOTE_API_URL);
+      console.log('[remote] Full payload:', JSON.stringify(payload, null, 2));
       const fetchResp = await fetch(REMOTE_API_URL, { method: 'POST', headers, body: JSON.stringify(payload) });
+      console.log('[remote] Response status:', fetchResp.status);
       const json = await fetchResp.json();
+      console.log('[remote] Full response:', JSON.stringify(json, null, 2));
+
+      // 記錄大語言模型的回應
+      const responseLog = {
+        ts: new Date().toISOString(),
+        event: 'llm_response',
+        url: REMOTE_API_URL,
+        status: fetchResp.status,
+        response: json
+      };
+      appendContextLog(responseLog);
 
       // Expecting structure similar to OpenAI-like responses: choices[0].message
       const choice = Array.isArray(json.choices) ? json.choices[0] : null;
       const messageOut = choice && choice.message ? choice.message : null;
 
-      if (messageOut && messageOut.function_call) {
+      // Handle both OpenAI-style tool_calls and function_call formats
+      const toolCalls = messageOut && (messageOut.tool_calls || messageOut.function_call);
+
+      // Check if there are actual tool calls to handle (not empty array)
+      const hasToolCalls = toolCalls && (Array.isArray(toolCalls) ? toolCalls.length > 0 : true);
+
+      if (messageOut && hasToolCalls) {
         // Remote asked to call a function
-        // Update context with the assistant message (without content but with function_call) if present
-        messages.push({ role: 'assistant', content: messageOut.content || '', function_call: messageOut.function_call });
-        return res.json({ type: 'function_call', function_call: messageOut.function_call, context: messages });
+        let functionCall;
+        if (Array.isArray(toolCalls)) {
+          // OpenAI-style tool_calls array
+          const tc = toolCalls[0];
+          functionCall = {
+            name: tc.function && tc.function.name,
+            arguments: tc.function && tc.function.arguments ? JSON.parse(tc.function.arguments) : {}
+          };
+        } else {
+          // Direct function_call format
+          functionCall = {
+            name: toolCalls.name,
+            arguments: typeof toolCalls.arguments === 'string' ? JSON.parse(toolCalls.arguments) : toolCalls.arguments
+          };
+        }
+
+        // Update context with the assistant message
+        messages.push({ role: 'assistant', content: messageOut.content || '', tool_calls: toolCalls });
+        return res.json({ type: 'function_call', function_call: functionCall, context: messages });
       }
 
       // Otherwise, return assistant content as reply and updated context
@@ -134,6 +215,9 @@ app.post('/call_function', async (req, res) => {
   // Simulated available functions
   const name = function_call.name;
   const args = function_call.arguments || {};
+
+  // Initialize context array
+  const ctx = Array.isArray(context) ? context.slice() : [];
 
   let functionResult = null;
   // helper to safely resolve paths (allow project dir and system temp dir)
@@ -180,6 +264,144 @@ app.post('/call_function', async (req, res) => {
           error: err.message
         };
         functionResult = { weather };
+      }
+
+    } else if (name === 'list_files') {
+      // List files in the specified directory (default to current directory)
+      const dirPath = args.path ? path.resolve(args.path) : __dirname;
+      try {
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        const files = entries.filter(e => e.isFile()).map(e => e.name);
+        const directories = entries.filter(e => e.isDirectory()).map(e => e.name);
+        functionResult = {
+          path: dirPath,
+          files,
+          directories,
+          total: files.length + directories.length
+        };
+      } catch (err) {
+        functionResult = { error: `讀取目錄失敗：${err.message}` };
+      }
+
+    } else if (name === 'list_tables') {
+      // List all tables in the database
+      let connection;
+      try {
+        connection = await mysql.createConnection(DB_CONFIG);
+        const [tables] = await connection.query('SHOW TABLES');
+        const tableNames = tables.map(row => Object.values(row)[0]);
+        functionResult = { 
+          database: DB_CONFIG.database,
+          tables: tableNames,
+          count: tableNames.length
+        };
+      } catch (err) {
+        functionResult = { error: `查詢資料庫表失敗：${err.message}` };
+      } finally {
+        if (connection) await connection.end();
+      }
+
+    } else if (name === 'query_database') {
+      // Query data from a specific table
+      const { table, search_value, columns = '*' } = args;
+      let connection;
+      try {
+        connection = await mysql.createConnection(DB_CONFIG);
+
+        // Validate table name (prevent SQL injection)
+        const [tables] = await connection.query('SHOW TABLES');
+        const tableNames = tables.map(row => Object.values(row)[0]);
+        
+        let targetTable = table;
+        
+        // 如果指定的表不存在，自動使用 ai_qa 表（主要問答表）
+        if (!tableNames.includes(table)) {
+          if (tableNames.includes('ai_qa')) {
+            targetTable = 'ai_qa';
+          } else if (tableNames.length > 0) {
+            // 如果沒有 ai_qa，使用第一個表
+            targetTable = tableNames[0];
+          } else {
+            functionResult = { error: `資料庫中沒有表。` };
+            return res.json({ type: 'reply', reply: functionResult.error, context: ctx, function_result: functionResult });
+          }
+        }
+        
+        // 驗證 columns 參數，如果無效則使用 *
+        let validColumns = columns;
+        if (columns && columns !== '*') {
+          try {
+            const [columnsInfo] = await connection.query(`SHOW COLUMNS FROM ${targetTable}`);
+            const validColumnNames = columnsInfo.map(col => col.Field);
+            // 檢查指定的欄位是否存在
+            const requestedColumns = columns.split(',').map(c => c.trim());
+            const invalidColumns = requestedColumns.filter(c => !validColumnNames.includes(c));
+            if (invalidColumns.length > 0) {
+              // 如果有無效欄位，改用 * 查詢所有欄位
+              validColumns = '*';
+            }
+          } catch (e) {
+            validColumns = '*';
+          }
+        } else {
+          validColumns = '*';
+        }
+
+        // Build query
+        let query = `SELECT ${validColumns} FROM ${targetTable} LIMIT 50`;
+        let params = [];
+
+        if (search_value) {
+          // Search in all text columns
+          const [columnsInfo] = await connection.query(`SHOW COLUMNS FROM ${targetTable}`);
+          // 找出所有 text 類型的欄位
+          const textColumns = columnsInfo.filter(col =>
+            col.Type.includes('text') || col.Type.includes('varchar')
+          ).map(col => col.Field);
+
+          // 分割關鍵字：支援空格、頓號、逗號，或自動分割長關鍵字（超過 4 個中文字）
+          let keywords = search_value.split(/[\s,，、]+/).filter(k => k.length > 0);
+          
+          // 如果只有一個關鍵字但很長（如「柳工挖土機型號」），嘗試分割成更小的詞
+          if (keywords.length === 1 && keywords[0].length > 4) {
+            const longKeyword = keywords[0];
+            // 嘗試常見的词組分割（例如：柳工 + 挖土機 + 型號）
+            const commonTerms = ['柳工', '挖土機', '機型', '型號', '維修', '保養', '液壓', '引擎', '履帶'];
+            const foundTerms = commonTerms.filter(term => longKeyword.includes(term));
+            if (foundTerms.length > 0) {
+              keywords = foundTerms;
+            }
+          }
+
+          if (keywords.length > 1) {
+            // 多個關鍵字：使用 OR 連接，每個關鍵字分別搜尋
+            const whereClauses = keywords.map(() =>
+              textColumns.map(col => `${col} LIKE ?`).join(' OR ')
+            );
+            query = `SELECT ${validColumns} FROM ${targetTable} WHERE (${whereClauses.join(' OR ')}) LIMIT 50`;
+            params = textColumns.flatMap(() => keywords.map(k => `%${k}%`));
+          } else {
+            // 單一關鍵字
+            const whereClause = textColumns.map(col => `${col} LIKE ?`).join(' OR ');
+            query = `SELECT ${validColumns} FROM ${targetTable} WHERE ${whereClause} LIMIT 50`;
+            params = textColumns.map(() => `%${search_value}%`);
+          }
+        }
+
+        const [rows] = await connection.query(query, params);
+        functionResult = {
+          database: DB_CONFIG.database,
+          table: targetTable,
+          original_table: table,
+          columns,
+          search_value,
+          rows,
+          count: rows.length
+        };
+      } catch (err) {
+        functionResult = { error: `查詢資料庫失敗：${err.message}` };
+      } finally {
+        if (connection) await connection.end();
       }
 
     } else if (name === 'translate_text') {
@@ -234,7 +456,7 @@ app.post('/call_function', async (req, res) => {
         functionResult = { found: matched.slice(0, 20) };
       }
 
-    } else {
+    }   else {
       functionResult = { error: `Unknown function ${name}` };
     }
   } catch (err) {
@@ -248,43 +470,64 @@ app.post('/call_function', async (req, res) => {
   } catch (e) {
     /* ignore logging errors */
   }
-  // If REMOTE_API_URL is set, send the function result back to remote API to continue the conversation
-  const ctx = Array.isArray(context) ? context.slice() : [];
-  if (REMOTE_API_URL) {
+
+  // 如果有遠端 API，請求大語言模型生成格式化回覆
+  if (REMOTE_API_URL && functionResult.error === undefined) {
     try {
-      // Append the function message to context
-      const messages = ctx.slice();
-      messages.push({ role: 'function', name, content: JSON.stringify(functionResult) });
+      // 將 function 結果加入 context
+      ctx.push({ role: 'function', name: name, content: JSON.stringify(functionResult) });
+
+      // 格式化原始資料區塊（使用可折疊的 details 標籤）
+      let rawDataText = '';
+      if (functionResult.rows && functionResult.rows.length > 0) {
+        rawDataText = '<details>\n<summary>📄 查看原始資料</summary>\n\n';
+        functionResult.rows.forEach((row, i) => {
+          rawDataText += `- 第${i + 1}筆：id=${row.id}, 問題：${row.question}, 答案：${row.answer}, 類別：${row.category}\n`;
+        });
+        rawDataText += '\n</details>';
+      }
+
+      // 請求大語言模型生成格式化回覆
+      const messages = [
+        {
+          role: 'system',
+          content: '你是一個智能助手。請根據提供的資料庫查詢結果，用清晰、專業的 Markdown 格式回覆用戶。\n\n**回覆規範：**\n1. **必須使用繁體中文**\n2. **必須嚴格根據提供的查詢結果回覆，不能編造資料**\n3. **每個資訊項目必須獨立一行**（使用換行分隔）\n4. 使用 emoji 圖示增強可讀性\n5. 使用分隔線區隔內容區塊\n6. 必須標註資料來源\n7. 在回覆末尾加上可折疊的原始資料區塊（使用 `<details>` 標籤）\n\n**格式範例：**\n```\n📊 **資料庫查詢結果**\n━━━━━━━━━━━━━━━━━━━━━━\n\n❓ **問題：** [從查詢結果中取出 question 欄位]\n\n✅ **答案：** [從查詢結果中取出 answer 欄位]\n\n🏷️ **類別：** [從查詢結果中取出 category 欄位]\n\n📁 **資料來源：** ai_qa 資料表\n\n<details>\n<summary>📄 查看原始資料</summary>\n\n' + rawDataText.replace(/<details>|<\/details>|<summary>.*<\/summary>/g, '') + '\n</details>\n```'
+        },
+        // 加入明確的資料提示
+        {
+          role: 'user',
+          content: '請根據以下資料庫查詢結果回覆：\n\n查詢結果：' + JSON.stringify(functionResult, null, 2)
+        },
+        ...ctx.filter(m => m.role === 'user') // 只保留用戶的原始問題
+      ];
 
       const payload = {
         model: (INFOR_JSON && INFOR_JSON.model) || 'Qwen2.5-3B-Instruct',
-        messages,
-        tool_choice: (INFOR_JSON && INFOR_JSON.tool_choice) || 'auto',
+        messages: messages,
         temperature: (INFOR_JSON && INFOR_JSON.temperature) || 0.2
       };
-      if (INFOR_JSON && INFOR_JSON.tools) payload.tools = INFOR_JSON.tools;
 
       const headers = { 'Content-Type': 'application/json' };
       if (process.env.API_KEY) headers['Authorization'] = `Bearer ${process.env.API_KEY}`;
 
       const fetchResp = await fetch(REMOTE_API_URL, { method: 'POST', headers, body: JSON.stringify(payload) });
       const json = await fetchResp.json();
+      const assistantContent = json.choices?.[0]?.message?.content || '';
 
-      const choice = Array.isArray(json.choices) ? json.choices[0] : null;
-      const messageOut = choice && choice.message ? choice.message : null;
-      const assistantContent = messageOut ? (messageOut.content || '') : (json.message && json.message.content) || '';
-      messages.push({ role: 'assistant', content: assistantContent });
+      ctx.push({ role: 'assistant', content: assistantContent });
 
-      return res.json({ type: 'reply', reply: assistantContent, context: messages, function_result: functionResult });
+      if (process.env.RECORD_CONTEXT === 'true') {
+        appendContextLog({ ts: new Date().toISOString(), event: 'function_reply', name, functionResult, reply: assistantContent });
+      }
+
+      return res.json({ type: 'reply', reply: assistantContent, context: ctx, function_result: functionResult });
     } catch (err) {
-      console.error('Remote resume error:', err);
-      // fallback to local resume
-      const final = ai.resumeWithFunctionResult(ctx, name, functionResult);
-      return res.json({ type: 'reply', reply: final.reply, context: final.context, function_result: functionResult });
+      console.error('Remote API error for function reply:', err);
+      // Fall back to local AI module
     }
   }
 
-  // Let the local AI module resume the conversation with function result
+  // Use local AI module to generate reply based on function result
   const final = ai.resumeWithFunctionResult(ctx, name, functionResult);
   return res.json({ type: 'reply', reply: final.reply, context: final.context, function_result: functionResult });
 });

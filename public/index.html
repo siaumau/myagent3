@@ -4,22 +4,68 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>AI Chat Demo - Function Calling</title>
-    <style>
-      body { font-family: Arial, sans-serif; padding: 20px; }
-      #messages { border: 1px solid #ccc; padding: 10px; height: 300px; overflow: auto; }
-      .msg { margin: 6px 0; }
-      .user { color: blue; }
-      .assistant { color: green; }
-      .system { color: gray; }
-    </style>
+    <link rel="stylesheet" href="/styles.css">
+    <!-- 引入 marked.js 用於 Markdown 渲染 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
-    <h2>簡單線上 AI 聊天示範（Context + Function Calling）</h2>
-    <div id="messages"></div>
-    <form id="form">
-      <input id="input" autocomplete="off" style="width:70%" placeholder="輸入訊息，例如：請問現在時間或查詢 infor.txt 的內容" />
-      <button>送出</button>
-    </form>
+    <div class="app">
+      <div class="top">
+        <div class="brand">
+          <div class="logo">AI</div>
+          <div>
+            <div class="title">AI Chat Demo</div>
+            <div class="small">Context + Function-calling 示範</div>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="tag">Demo</div>
+        </div>
+      </div>
+
+      <div class="layout">
+        <div class="chat-panel">
+          <div id="messages" class="messages"></div>
+
+          <div class="composer">
+            <input id="input" class="input" autocomplete="off" placeholder="輸入訊息，例如：請問現在時間或查詢台中天氣" />
+            <button id="send" class="send">送出</button>
+          </div>
+
+          <!-- 快速提交按鈕 -->
+          <div class="quick-actions">
+            <button class="quick-btn" data-message="現在時間">⏰ 現在時間</button>
+            <button class="quick-btn" data-message="世界新聞">🌍 世界新聞</button>
+            <button class="quick-btn" data-message="openclaw 最新新聞">📰 openclaw 最新新聞</button>
+            <button class="quick-btn" data-message="彰化天氣空氣品質">🌤️ 彰化天氣空氣品質</button>
+            <button class="quick-btn" data-message="查詢當前資料庫中挖土機有哪些型號呢?">📖 挖土機手冊</button>
+          </div>
+        </div>
+
+        <div class="right-panel">
+          <div class="panel">
+            <h3>System</h3>
+            <div class="system-note">範例：輸入「現在時間」或「查詢 infor.txt」來觸發 function-calling。可啟用 `RECORD_CONTEXT` 以記錄上下文。</div>
+          </div>
+
+          <div class="panel">
+            <h3>Context Inspector</h3>
+            <button id="open-context" class="btn-context">🔍 查看 Context</button>
+          </div>
+        </div>
+
+        <!-- Context 彈窗 -->
+        <div id="context-modal" class="modal">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3>📄 Context Inspector</h3>
+              <button id="close-context" class="btn-close">&times;</button>
+            </div>
+            <div id="contextJson" class="context-json"></div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <script src="/app.js"></script>
   </body>

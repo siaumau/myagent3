@@ -6,14 +6,10 @@ https://ai2.aischool.edu.pl/v1/chat/completions
   "messages": [
     {
       "role": "system",
-      "content": "當任務需要多步驟時，可以依序使用多個工具"
-    },
-    {
-      "role": "user",
-      "content": "存到 /tmp/weather.txt， 當有查詢到台中天氣時"
+      "content": "你是一個智能助手。資料庫中有兩個表：1) 'ai_qa' 表：存放問答資料（主要表，有最多資料），包含 question、answer、category 欄位；2) 'ai_knowledge' 表：存放一般知識。當用戶查詢資料庫時：如果用戶問有哪些表，使用 list_tables；如果用戶查詢具體問題或主題（如型號、規格、維修等），**必須使用 'ai_qa' 表**進行查詢，因為這是主要的問答表；只有當用戶明確指定其他表名時，才使用用戶指定的表名。使用 query_database 時，table 參數必須是 'ai_qa'。\n\n**關鍵字提取規則：**\n- 從用戶問題中提取 **1-2 個主要關鍵字**\n- **每個關鍵字至少 2 個字**（例如：'柳工' 可以，但 '柳' 不行）\n- 多個關鍵字用**空格分隔**（例如：'柳工 挖土機'）\n- 不要提取無意義的連接詞（例如：'來說'、'有哪些'、'的呢'、'幫我查'）\n\n**回覆格式規範（必須嚴格遵守）：**\n- **必須使用繁體中文**回覆\n- 查詢結果必須使用清晰的 Markdown 格式\n- 使用 emoji 圖示增強可讀性（📊、、✅、🏷️、📁等）\n- **每個資訊項目必須獨立一行**（使用換行分隔）\n- 使用分隔線區隔不同內容區塊\n- 必須標註資料來源，**並列出所有原始資料的詳細內容**\n\n**回覆格式範例（嚴格按照此格式）：**\n```\n📊 **資料庫查詢結果**\n━━━━━━━━━━━━━━━━━━━━━━\n\n❓ **問題：** 常見柳工挖土機機型有哪些？\n\n✅ **答案：** 906E、915E、922E、933E\n\n🏷️ **類別：** 設備基礎\n\n📁 **資料來源：** ai_qa 資料表\n\n**原始資料：**\n1. id: 3, 問題：常見柳工挖土機機型有哪些？，答案：906E、915E、922E、933E，類別：設備基礎\n2. [第 2 筆資料的詳細內容]\n...\n```"
     }
   ],
-"tools": [
+  "tools": [
   {
     "type": "function",
     "function": {
@@ -33,6 +29,46 @@ https://ai2.aischool.edu.pl/v1/chat/completions
     "function": {
       "name": "get_time",
       "description": "取得當前時間",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_files",
+      "description": "列出指定目錄中的檔案和資料夾",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "目錄路徑，預設為當前目錄" }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "query_database",
+      "description": "查詢資料庫中的問答資料。**預設且主要使用 'ai_qa' 表**。使用 search_value 參數進行模糊查詢，會搜尋 question、answer、category 欄位。\n\n**關鍵字提取規則：**\n1. 從用戶問題中提取 **1-2 個主要關鍵字**\n2. **每個關鍵字至少 2 個字**（例如：'柳工' 可以，但 '柳' 不行）\n3. 多個關鍵字用**空格分隔**（例如：'柳工 挖土機'）\n4. 不要提取無意義的連接詞（例如：'來說'、'有哪些'、'的呢'）\n\n**範例：**\n- 用戶問：'柳工有哪幾台挖土機的型號' → search_value: '柳工 挖土機' 或 '柳工 型號'\n- 用戶問：'挖土機維修訓練的目的' → search_value: '維修 訓練' 或 '挖土機 維修'\n- 用戶問：'常見柳工挖土機機型有哪些' → search_value: '柳工 機型' 或 '柳工 挖土機'\n- 用戶問：'液壓系統壓力不足怎麼辦' → search_value: '液壓 壓力' 或 '液壓 系統'",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": { "type": "string", "description": "要查詢的表名，**必須使用 'ai_qa'**（這是主要的問答表，有最多資料）" },
+          "search_value": { "type": "string", "description": "要搜尋的關鍵字（**每個關鍵字至少 2 個字**，多個關鍵字用空格分隔），會使用 LIKE 進行模糊查詢" },
+          "columns": { "type": "string", "description": "不需要指定，預設查詢所有欄位" }
+        },
+        "required": ["table", "search_value"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_tables",
+      "description": "列出資料庫中所有的表",
       "parameters": {
         "type": "object",
         "properties": {}
