@@ -70,8 +70,7 @@ const DB_CONFIG = {
   port: parseInt(process.env.DB_PORT) || 3306,
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'testdb',
-  type: process.env.DB_TYPE || 'mysql'
+  database: process.env.DB_NAME || 'testdb'
 };
 
 // Define tool descriptions to send to remote LLM when requesting function-calling
@@ -85,6 +84,21 @@ const TOOL_DEFS = (INFOR_JSON && INFOR_JSON.tools) ? INFOR_JSON.tools : [
   { type: 'function', function: { name: 'write_file', description: '寫入檔案內容', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path','content'] } } },
   { type: 'function', function: { name: 'append_file', description: '追加內容到檔案', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path','content'] } } },
   { type: 'function', function: { name: 'read_file', description: '讀取檔案內容', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } }
+];
+
+const ACTIVE_TOOL_DEFS = [
+  { type: 'function', function: { name: 'get_weather', description: '查詢指定城市的天氣', parameters: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] } } },
+  { type: 'function', function: { name: 'get_time', description: '取得目前時間', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'list_files', description: '列出指定目錄中的檔案與資料夾', parameters: { type: 'object', properties: { path: { type: 'string', description: '目錄路徑，例如 . 或 logs' } } } } },
+  { type: 'function', function: { name: 'query_database', description: '查詢資料庫內容', parameters: { type: 'object', properties: { table: { type: 'string' }, search_value: { type: 'string' }, columns: { type: 'string' } }, required: ['table', 'search_value'] } } },
+  { type: 'function', function: { name: 'list_tables', description: '列出資料庫中的資料表', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'translate_text', description: '翻譯文字', parameters: { type: 'object', properties: { text: { type: 'string' }, target_lang: { type: 'string' } }, required: ['text', 'target_lang'] } } },
+  { type: 'function', function: { name: 'create_file', description: '建立新檔案。若 content 省略則建立空白檔案。', parameters: { type: 'object', properties: { path: { type: 'string', description: '檔案路徑，例如 999.txt 或 notes/999.txt' }, content: { type: 'string', description: '可選，檔案內容' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'write_file', description: '覆寫檔案內容。path 必須是檔案路徑，不是資料夾。', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } },
+  { type: 'function', function: { name: 'append_file', description: '追加內容到檔案尾端。', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } },
+  { type: 'function', function: { name: 'read_file', description: '讀取檔案內容', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'delete_path', description: '刪除檔案或空資料夾', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'move_path', description: '移動或重新命名檔案或資料夾', parameters: { type: 'object', properties: { source_path: { type: 'string' }, destination_path: { type: 'string' } }, required: ['source_path', 'destination_path'] } } }
 ];
 
 
@@ -119,7 +133,7 @@ app.post('/chat', async (req, res) => {
       const payload = {
         model: (INFOR_JSON && INFOR_JSON.model) || 'Qwen2.5-3B-Instruct',
         messages: messagesWithSystem,
-        tools: TOOL_DEFS,
+        tools: ACTIVE_TOOL_DEFS,
         tool_choice: (INFOR_JSON && INFOR_JSON.tool_choice) || 'auto',
         temperature: (INFOR_JSON && INFOR_JSON.temperature) || 0.2
       };
@@ -232,6 +246,17 @@ app.post('/call_function', async (req, res) => {
     if (candidate.startsWith(projdir) || candidate.startsWith(tmpdir)) return candidate;
     // otherwise reject for safety
     return null;
+  }
+
+  function looksLikeFileName(value) {
+    return typeof value === 'string'
+      && value.trim().length > 0
+      && !/[\\\/]/.test(value.trim())
+      && /\.[A-Za-z0-9]{1,10}$/.test(value.trim());
+  }
+
+  function ensureParentDir(filePath) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
   }
 
   try {
@@ -412,6 +437,18 @@ app.post('/call_function', async (req, res) => {
       // Simple simulated translation (placeholder)
       functionResult = { translated: `[${target}] ${text}` };
 
+    } else if (name === 'create_file') {
+      const p = args.path;
+      const content = args.content || '';
+      const resolved = safeResolve(p);
+      if (!resolved) {
+        functionResult = { error: `Invalid create path: ${p}` };
+      } else {
+        ensureParentDir(resolved);
+        fs.writeFileSync(resolved, content, 'utf8');
+        functionResult = { ok: true, action: 'created', path: resolved, bytes: Buffer.byteLength(content, 'utf8') };
+      }
+
     } else if (name === 'write_file') {
       const p = args.path;
       const content = args.content || '';
@@ -419,8 +456,19 @@ app.post('/call_function', async (req, res) => {
       if (!resolved) {
         functionResult = { error: `Invalid write path: ${p}` };
       } else {
-        fs.writeFileSync(resolved, content, 'utf8');
-        functionResult = { ok: true, path: resolved };
+        let targetPath = resolved;
+        let payload = content;
+        let action = 'written';
+
+        if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory() && looksLikeFileName(content)) {
+          targetPath = path.join(resolved, content.trim());
+          payload = '';
+          action = 'created';
+        }
+
+        ensureParentDir(targetPath);
+        fs.writeFileSync(targetPath, payload, 'utf8');
+        functionResult = { ok: true, action, path: targetPath, bytes: Buffer.byteLength(payload, 'utf8') };
       }
 
     } else if (name === 'append_file') {
@@ -430,8 +478,9 @@ app.post('/call_function', async (req, res) => {
       if (!resolved) {
         functionResult = { error: `Invalid append path: ${p}` };
       } else {
+        ensureParentDir(resolved);
         fs.appendFileSync(resolved, content, 'utf8');
-        functionResult = { ok: true, path: resolved };
+        functionResult = { ok: true, action: 'appended', path: resolved, bytes: Buffer.byteLength(content, 'utf8') };
       }
 
     } else if (name === 'read_file') {
@@ -446,6 +495,39 @@ app.post('/call_function', async (req, res) => {
         } catch (err) {
           functionResult = { error: `Read failed: ${err.message}` };
         }
+      }
+
+    } else if (name === 'delete_path') {
+      const p = args.path;
+      const resolved = safeResolve(p);
+      if (!resolved) {
+        functionResult = { error: `Invalid delete path: ${p}` };
+      } else if (!fs.existsSync(resolved)) {
+        functionResult = { error: `Path does not exist: ${resolved}` };
+      } else {
+        const stat = fs.statSync(resolved);
+        if (stat.isDirectory()) {
+          fs.rmdirSync(resolved);
+          functionResult = { ok: true, action: 'deleted_directory', path: resolved };
+        } else {
+          fs.unlinkSync(resolved);
+          functionResult = { ok: true, action: 'deleted_file', path: resolved };
+        }
+      }
+
+    } else if (name === 'move_path') {
+      const sourcePath = args.source_path;
+      const destinationPath = args.destination_path;
+      const sourceResolved = safeResolve(sourcePath);
+      const destinationResolved = safeResolve(destinationPath);
+      if (!sourceResolved || !destinationResolved) {
+        functionResult = { error: `Invalid move paths: ${sourcePath} -> ${destinationPath}` };
+      } else if (!fs.existsSync(sourceResolved)) {
+        functionResult = { error: `Source path does not exist: ${sourceResolved}` };
+      } else {
+        ensureParentDir(destinationResolved);
+        fs.renameSync(sourceResolved, destinationResolved);
+        functionResult = { ok: true, action: 'moved', source_path: sourceResolved, destination_path: destinationResolved };
       }
 
     } else if (name === 'read_infor') {
@@ -643,5 +725,5 @@ app.listen(PORT, async () => {
   console.log(`Server running on http://localhost:${PORT}`);
   // Initialize todo system
   await initTodoSystem();
-  console.log('[Todo] Scheduler started, checking tasks every 10 minutes');
+  console.log('[Todo] Scheduler started, checking tasks every 1 minutes');
 });
