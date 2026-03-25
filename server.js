@@ -8,6 +8,8 @@ const axios = require('axios');
 const os = require('os');
 const mysql = require('mysql2/promise');
 const { fetchNews } = require('./news_fetcher');
+const todoService = require('./todo_service');
+const { scheduler } = require('./todo_scheduler');
 
 const app = express();
 app.use(express.json());
@@ -532,7 +534,114 @@ app.post('/call_function', async (req, res) => {
   return res.json({ type: 'reply', reply: final.reply, context: final.context, function_result: functionResult });
 });
 
+// ==================== Todo List API Endpoints ====================
+
+// Initialize todo table and start scheduler
+async function initTodoSystem() {
+  await todoService.initTable();
+  scheduler.start();
+}
+
+// Get all tasks
+app.get('/api/todos', async (req, res) => {
+  try {
+    const tasks = await todoService.getAllTasks();
+    res.json({ success: true, tasks });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get pending tasks
+app.get('/api/todos/pending', async (req, res) => {
+  try {
+    const tasks = await todoService.getPendingTasks();
+    res.json({ success: true, tasks });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Create a new task
+app.post('/api/todos', async (req, res) => {
+  const { title, description, priority } = req.body || {};
+  if (!title) {
+    return res.status(400).json({ success: false, error: 'title is required' });
+  }
+  try {
+    const task = await todoService.createTask(title, description, priority || 'medium');
+    res.json({ success: true, task });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get task by ID
+app.get('/api/todos/:id', async (req, res) => {
+  try {
+    const task = await todoService.getTaskById(parseInt(req.params.id));
+    if (!task) {
+      return res.status(404).json({ success: false, error: 'Task not found' });
+    }
+    res.json({ success: true, task });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update task status
+app.patch('/api/todos/:id/status', async (req, res) => {
+  const { status, ai_analysis, verification_result, error_message } = req.body || {};
+  if (!status) {
+    return res.status(400).json({ success: false, error: 'status is required' });
+  }
+  try {
+    await todoService.updateTaskStatus(
+      parseInt(req.params.id),
+      status,
+      ai_analysis ? JSON.stringify(ai_analysis) : null,
+      verification_result ? JSON.stringify(verification_result) : null,
+      error_message
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete task
+app.delete('/api/todos/:id', async (req, res) => {
+  try {
+    await todoService.deleteTask(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get scheduler status
+app.get('/api/todos/scheduler/status', (req, res) => {
+  res.json({ success: true, status: scheduler.getStatus() });
+});
+
+// Start scheduler manually
+app.post('/api/todos/scheduler/start', (req, res) => {
+  scheduler.start();
+  res.json({ success: true, status: scheduler.getStatus() });
+});
+
+// Stop scheduler manually
+app.post('/api/todos/scheduler/stop', (req, res) => {
+  scheduler.stop();
+  res.json({ success: true, status: scheduler.getStatus() });
+});
+
+// ==================== Server Startup ====================
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  // Initialize todo system
+  await initTodoSystem();
+  console.log('[Todo] Scheduler started, checking tasks every 10 minutes');
 });

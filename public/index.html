@@ -38,11 +38,25 @@
             <button class="quick-btn" data-message="世界新聞">🌍 世界新聞</button>
             <button class="quick-btn" data-message="openclaw 最新新聞">📰 openclaw 最新新聞</button>
             <button class="quick-btn" data-message="彰化天氣空氣品質">🌤️ 彰化天氣空氣品質</button>
-            <button class="quick-btn" data-message="查詢當前資料庫中挖土機有哪些型號呢?">📖 挖土機手冊</button>
+            <button class="quick-btn" data-message="查詢當前資料庫中挖土機有哪些型號呢？">📖 挖土機手冊</button>
           </div>
         </div>
 
         <div class="right-panel">
+          <!-- Todo List Panel -->
+          <div class="panel todo-panel">
+            <h3>📋 Todo List <span id="todo-count" class="badge">0</span></h3>
+            <div class="todo-input-row">
+              <input id="todo-title" class="todo-input" placeholder="新增待辦事項..." />
+              <button id="todo-add" class="btn-add">+</button>
+            </div>
+            <div id="todo-list" class="todo-list"></div>
+            <div class="todo-actions">
+              <button id="todo-refresh" class="btn-small">🔄 刷新</button>
+              <button id="todo-scheduler-status" class="btn-small">📊 排程器</button>
+            </div>
+          </div>
+
           <div class="panel">
             <h3>System</h3>
             <div class="system-note">範例：輸入「現在時間」或「查詢 infor.txt」來觸發 function-calling。可啟用 `RECORD_CONTEXT` 以記錄上下文。</div>
@@ -62,6 +76,32 @@
               <button id="close-context" class="btn-close">&times;</button>
             </div>
             <div id="contextJson" class="context-json"></div>
+          </div>
+        </div>
+
+        <!-- Todo Detail Modal -->
+        <div id="todo-modal" class="modal">
+          <div class="modal-content modal-large">
+            <div class="modal-header">
+              <h3>📝 任務詳情</h3>
+              <button id="close-todo-modal" class="btn-close">&times;</button>
+            </div>
+            <div id="todoDetail" class="todo-detail"></div>
+          </div>
+        </div>
+
+        <!-- Scheduler Status Modal -->
+        <div id="scheduler-modal" class="modal">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3>📊 排程器狀態</h3>
+              <button id="close-scheduler-modal" class="btn-close">&times;</button>
+            </div>
+            <div id="schedulerStatus" class="scheduler-status"></div>
+            <div class="scheduler-actions">
+              <button id="scheduler-stop" class="btn-warning">⏸️ 暫停</button>
+              <button id="scheduler-start" class="btn-success">▶️ 啟動</button>
+            </div>
           </div>
         </div>
       </div>
