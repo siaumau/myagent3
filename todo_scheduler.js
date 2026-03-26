@@ -332,9 +332,9 @@ function detectFileOperation(task, analysis) {
   if (
     combinedText.includes('move') ||
     combinedText.includes('rename') ||
-    combinedText.includes('蝘餃?') ||
-    combinedText.includes('?祉宏') ||
-    combinedText.includes('??賢?')
+    combinedText.includes('?謢??') ||
+    combinedText.includes('??∴?') ||
+    combinedText.includes('??謢????')
   ) {
     return 'move';
   }
@@ -342,7 +342,7 @@ function detectFileOperation(task, analysis) {
   if (
     combinedText.includes('delete') ||
     combinedText.includes('remove') ||
-    combinedText.includes('?芷')
+    combinedText.includes('????')
   ) {
     return 'delete';
   }
@@ -351,9 +351,9 @@ function detectFileOperation(task, analysis) {
     combinedText.includes('create') ||
     combinedText.includes('new file') ||
     combinedText.includes('empty file') ||
-    combinedText.includes('?啣?') ||
-    combinedText.includes('撱箇?') ||
-    combinedText.includes('?萄遣')
+    combinedText.includes('???') ||
+    combinedText.includes('?璇??') ||
+    combinedText.includes('???遜')
   ) {
     return 'create';
   }
@@ -425,12 +425,13 @@ function detectIndustryPlanTask(task, analysis) {
 }
 
 function detectArticleSummaryTask(task, analysis) {
-  const combinedText = [
+  const sources = [
     task?.title || '',
     task?.description || '',
     ...(analysis?.execution_plan || []),
     ...(analysis?.verification_criteria || [])
-  ].join(' ').toLowerCase();
+  ];
+  const combinedText = sources.join(' ').toLowerCase();
 
   const articleSignals = [
     'article',
@@ -438,15 +439,18 @@ function detectArticleSummaryTask(task, analysis) {
     'summary',
     'summarize',
     'extract',
-    '整理',
-    '摘要',
-    '文章',
-    '閱讀',
-    '阅读',
-    '提取'
+    '?皜?',
+    '?謢?',
+    '???',
+    '?璇?',
+    '??脩?',
+    '???'
   ];
 
-  return articleSignals.filter(signal => combinedText.includes(signal)).length >= 2;
+  const hasArticleUrl = sources.some(source => /https?:\/\/\S+/i.test(source));
+  const signalCount = articleSignals.filter(signal => combinedText.includes(signal)).length;
+
+  return hasArticleUrl || signalCount >= 2;
 }
 
 function executeIndustryPlanTask(task, analysis, fileName) {
@@ -465,6 +469,12 @@ function executeIndustryPlanTask(task, analysis, fileName) {
 }
 
 function buildIndustryPlanMarkdown(task, analysis) {
+  const useChinese = taskRequestsChinese(task, analysis);
+
+  if (useChinese) {
+    return buildIndustryPlanMarkdownZh(task, analysis);
+  }
+
   const industries = [
     ['Manufacturing', 'Production scheduling changes too slowly, causing idle machines and delayed orders.', 'Use AI scheduling and anomaly alerts to rebalance jobs in real time.', 'Better on-time delivery, lower overtime, and fewer unplanned stoppages.'],
     ['Retail', 'Store demand forecasting is inaccurate, leading to overstocks and stockouts.', 'Use AI forecasting with POS, seasonality, and promotion signals.', 'Higher inventory turnover and improved shelf availability.'],
@@ -534,28 +544,130 @@ function buildIndustryPlanMarkdown(task, analysis) {
   return lines.join('\n') + '\n';
 }
 
-async function executeArticleSummaryTask(task, analysis, fileName) {
-  const title = extractQuotedTitle(task, analysis) || buildResearchQuery(task, analysis);
-  const query = `${title} article`;
-  const searchResults = await searchTutorialPages(query);
+function buildIndustryPlanMarkdownZh(task, analysis) {
+  const industries = [
+    ['製造業', '生產排程調整太慢，常常導致機台閒置、插單混亂與交期延誤。', '導入 AI 排程助手，結合訂單、產能、異常紀錄，自動提出更合理的排程建議。', '能降低加班與待料時間，提升準時交貨率與整體產能利用率。'],
+    ['零售業', '門市補貨常靠經驗判斷，容易缺貨或囤貨。', '導入 AI 銷售預測工具，根據歷史銷量、節慶、促銷與天氣做補貨建議。', '可提升庫存周轉率，減少缺貨損失與庫存壓力。'],
+    ['醫療產業', '櫃台與客服花大量時間回答重複問題，行政負擔很重。', '導入 AI 醫療客服助理，協助處理掛號、常見問答、看診流程說明。', '可降低櫃台壓力，縮短病患等待時間，提升服務效率。'],
+    ['物流業', '配送路線與派車安排調整不夠即時，常受交通與臨時變動影響。', '導入 AI 路線規劃系統，動態調整配送順序與車輛配置。', '可降低延誤率與油耗，提升配送效率與車隊使用率。'],
+    ['營建業', '工地資訊分散在照片、訊息與表單中，主管難以即時掌握風險。', '導入 AI 工地紀錄整理工具，自動彙整施工日報、異常回報與進度摘要。', '可更快掌握現場狀況，提早發現工安與進度風險。'],
+    ['飯店旅宿業', '房價與住房策略過度依賴人工調整，反應速度不夠快。', '導入 AI 訂房與價格建議系統，依需求波動與訂房趨勢自動調整。', '可提升住房率與平均房價，增加整體營收。'],
+    ['教育業', '老師花很多時間批改作業與撰寫回饋，教學時間被壓縮。', '導入 AI 批改與教學回饋助手，先產生批改建議與回饋草稿，再由老師確認。', '可減少重複行政工作，讓老師把時間留給教學與互動。'],
+    ['房仲業', '名單很多，但難以快速分辨哪些客戶真正有成交機會。', '導入 AI 潛在客戶評分系統，分析互動紀錄、需求與意願。', '可讓業務更聚焦高潛力客戶，提高成交率。'],
+    ['保險業', '理賠文件多、判讀慢，造成案件處理時間拉長。', '導入 AI 文件辨識與案件分類系統，自動整理理賠資料與初步判斷。', '可縮短理賠處理時間，降低人工作業負擔。'],
+    ['金融業', '客戶資料很多，但理專不容易快速找出適合的商品推薦機會。', '導入 AI 客戶洞察工具，從交易與互動紀錄中找出推薦時機。', '可提升交叉銷售成功率，增加客戶經營成效。'],
+    ['電商業', '客服大量時間花在查訂單、退款與重複問答上。', '導入 AI 客服助手，協助即時回答常見問題與處理標準流程。', '可降低客服工時，提升回覆速度與顧客滿意度。'],
+    ['農業', '農作判斷常依賴經驗，缺乏即時數據整合。', '導入 AI 農業分析工具，整合天氣、土壤、病蟲害與影像資料。', '可更精準安排灌溉、施肥與防治，提高收成穩定度。'],
+    ['餐飲業', '人力與食材準備常抓不準，容易浪費或忙不過來。', '導入 AI 來客預測與備料建議系統，根據時段、節日與歷史資料調整。', '可降低食材浪費、穩定人力成本並提升出餐效率。'],
+    ['法務服務', '合約審閱大量重複，資深人員時間被低價值工作佔滿。', '導入 AI 合約條款比對與風險提示工具，先做初步標記再由法務確認。', '可縮短審約時間，提升法務處理量能。'],
+    ['人資業', '履歷量大，人工初篩耗時且標準不一致。', '導入 AI 履歷篩選與面試問題建議工具，協助快速做初步判讀。', '可縮短招募流程，提升篩選效率與一致性。'],
+    ['汽車維修業', '很多保養與維修建議依賴師傅經驗，難以標準化。', '導入 AI 維修推薦系統，根據車況、里程與過往工單提供建議。', '可提升回廠率、增加預防性保養收入並提升顧客信任。'],
+    ['能源業', '設備異常通常等到出問題才處理，停機代價高。', '導入 AI 預測性維護系統，根據感測資料提早預警設備風險。', '可降低突發停機與維修成本，提升設備穩定度。'],
+    ['電信業', '客戶流失通常發生後才發現，挽回太慢。', '導入 AI 流失預測模型，提早識別高風險客戶並提供挽留建議。', '可降低流失率，讓行銷與客服更精準投入資源。'],
+    ['媒體行銷業', '不同平台需要大量改寫文案，內容團隊產能有限。', '導入 AI 文案改寫與多版本產生工具，加速社群、廣告與 EDM 產出。', '可縮短製作時間，提升行銷活動上線速度。'],
+    ['公部門與服務窗口', '民眾陳情與申辦案件多，人工分類與轉派速度慢。', '導入 AI 案件分類與摘要系統，自動整理重點並分派給對應單位。', '可加快案件處理效率，提升民眾服務品質與透明度。']
+  ];
 
-  if (searchResults.length === 0) {
-    return {
-      success: false,
-      error: `No article results found for query: ${query}`
-    };
+  const lines = [
+    '# AI 服務產業痛點與導入建議文宣',
+    '',
+    '## 總覽',
+    '以下整理 20 個當前常見產業痛點，並搭配實際可落地的 AI 導入方式與預期改善效果，可作為對外介紹 AI 服務時的說明素材。',
+    '',
+    '## 20 個產業痛點與 AI 改善情境',
+    ''
+  ];
+
+  industries.forEach(([industry, painPoint, aiSolution, expectedImpact], index) => {
+    lines.push(`### ${index + 1}. ${industry}`);
+    lines.push(`- 痛點描述：${painPoint}`);
+    lines.push(`- AI 導入方式：${aiSolution}`);
+    lines.push(`- 改善效果：${expectedImpact}`);
+    lines.push('- 推薦說法：先從單一流程切入，保留人工確認機制，再逐步擴大使用範圍，較容易讓客戶接受。');
+    lines.push('');
+  });
+
+  lines.push('## 對外推薦重點');
+  lines.push('你的 AI 服務不應只被描述成聊天機器人，而應該被定位成能幫企業節省時間、降低人力負擔、提升效率與決策品質的實用工具。');
+  lines.push('');
+  lines.push('## 推薦信範本');
+  lines.push('');
+  lines.push('敬啟者：');
+  lines.push('');
+  lines.push('隨著市場競爭加劇，許多企業正面臨重複性工作過多、資訊分散、反應速度不足與人力成本上升等問題。我們推薦導入 AI 服務，原因在於它不只是新的技術工具，而是能實際協助企業改善流程、提升效率與強化營運能力的解決方案。');
+  lines.push('');
+  lines.push('本服務可協助企業處理客服問答、文件整理、數據分析、流程自動化、決策輔助與知識管理等工作，特別適合應用在行政作業繁重、回應速度要求高、資訊量大且需要持續優化流程的場景。');
+  lines.push('');
+  lines.push('相較於一次性的大型系統改造，AI 服務更適合從單一部門或單一流程開始導入，先快速看見成果，再逐步擴大。這樣不但能降低導入風險，也更容易讓團隊建立信心與使用習慣。');
+  lines.push('');
+  lines.push('若貴單位正在尋找能夠提升效率、降低重複勞務並強化服務品質的方法，我們相信 AI 服務將會是一個兼具實用性與發展性的選擇。期待有機會進一步與您交流最適合的應用情境。');
+  lines.push('');
+  lines.push('敬祝 商祺');
+  lines.push('AI 解決方案顧問');
+  lines.push('');
+  lines.push('## 備註');
+  lines.push(`- 原始任務：${task.title}`);
+  if (analysis?.task_understanding) {
+    lines.push(`- 任務理解：${analysis.task_understanding}`);
   }
 
+  return lines.join('\n') + '\n';
+}
+
+function taskRequestsChinese(task, analysis) {
+  const combinedText = [
+    task?.title || '',
+    task?.description || '',
+    ...(analysis?.execution_plan || []),
+    ...(analysis?.verification_criteria || [])
+  ].join(' ').toLowerCase();
+
+  return (
+    combinedText.includes('中文') ||
+    combinedText.includes('繁中') ||
+    combinedText.includes('繁體') ||
+    combinedText.includes('zh') ||
+    combinedText.includes('chinese')
+  );
+}
+
+async function executeArticleSummaryTask(task, analysis, fileName) {
+  const explicitUrl = extractFirstUrl(task, analysis);
+  const title = extractQuotedTitle(task, analysis) || buildResearchQuery(task, analysis);
+  const query = `${title} article`;
   let selectedPage = null;
-  for (const result of searchResults.slice(0, 5)) {
+
+  if (explicitUrl) {
     try {
-      const page = await fetchReadablePage(result.url, title);
-      if (page && page.snippets.length > 0) {
-        selectedPage = page;
-        break;
+      const directPage = await fetchReadablePage(explicitUrl, title);
+      if (directPage && directPage.snippets.length > 0) {
+        selectedPage = directPage;
       }
     } catch (err) {
-      log(`[Scheduler] Failed to fetch article page ${result.url}: ${err.message}`);
+      log(`[Scheduler] Failed to fetch direct article ${explicitUrl}: ${err.message}`);
+    }
+  }
+
+  if (!selectedPage) {
+    const searchResults = await searchTutorialPages(query);
+
+    if (searchResults.length === 0) {
+      return {
+        success: false,
+        error: `No article results found for query: ${query}`
+      };
+    }
+
+    for (const result of searchResults.slice(0, 5)) {
+      try {
+        const page = await fetchReadablePage(result.url, title);
+        if (page && page.snippets.length > 0) {
+          selectedPage = page;
+          break;
+        }
+      } catch (err) {
+        log(`[Scheduler] Failed to fetch article page ${result.url}: ${err.message}`);
+      }
     }
   }
 
@@ -567,13 +679,9 @@ async function executeArticleSummaryTask(task, analysis, fileName) {
   }
 
   const summary = buildChineseArticleSummary(title, selectedPage);
-  let outputPath = null;
-
-  if (fileName) {
-    outputPath = path.join(process.cwd(), fileName);
-  } else {
-    outputPath = path.join(process.cwd(), `article-summary-task-${task.id}.txt`);
-  }
+  const outputPath = fileName
+    ? path.join(process.cwd(), fileName)
+    : path.join(process.cwd(), `article-summary-task-${task.id}.txt`);
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, summary, 'utf8');
@@ -591,6 +699,23 @@ async function executeArticleSummaryTask(task, analysis, fileName) {
   };
 }
 
+function extractFirstUrl(task, analysis) {
+  const sources = [
+    task?.title || '',
+    task?.description || '',
+    ...(analysis?.execution_plan || [])
+  ];
+
+  for (const source of sources) {
+    const match = source.match(/https?:\/\/\S+/i);
+    if (match) {
+      return match[0];
+    }
+  }
+
+  return null;
+}
+
 function extractQuotedTitle(task, analysis) {
   const sources = [
     task?.title || '',
@@ -599,8 +724,8 @@ function extractQuotedTitle(task, analysis) {
   ];
 
   for (const source of sources) {
-    const chineseQuote = source.match(/[《「『]([^》」』]{4,200})[》」』]/);
-    if (chineseQuote) return chineseQuote[1].trim();
+    const bookTitle = source.match(/《([^》]{4,200})》/);
+    if (bookTitle) return bookTitle[1].trim();
 
     const plainQuote = source.match(/["']([^"']{4,200})["']/);
     if (plainQuote) return plainQuote[1].trim();
@@ -634,7 +759,7 @@ function buildChineseArticleSummary(title, page) {
   lines.push('中文簡述：');
   lines.push('這篇文章主要在說明相關 AI 代理或雲端服務的實際應用方式、成本變化與落地價值。整理時保留了文章中可辨識的重點敘述與數字，方便快速做內部分享或對外說明。');
 
-  return lines.join('\n') + '\n';
+  return lines.join('\\n') + '\\n';
 }
 
 function toChineseBullet(text) {
