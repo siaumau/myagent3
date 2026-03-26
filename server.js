@@ -11,13 +11,17 @@ const { fetchNews } = require('./news_fetcher');
 const todoService = require('./todo_service');
 const { scheduler } = require('./todo_scheduler');
 const { processor } = require('./image_processor');
+const { PATHS, initializeDirectories } = require('./paths');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Initialize output directories
+initializeDirectories();
+
 // logs directory for optional context persistence
-const LOGS_DIR = path.join(__dirname, 'logs');
+const LOGS_DIR = PATHS.LOGS;
 if (!fs.existsSync(LOGS_DIR)) {
   try { fs.mkdirSync(LOGS_DIR, { recursive: true }); } catch (e) { /* ignore */ }
 }
@@ -32,7 +36,7 @@ function appendContextLog(entry) {
 }
 
 // Read infor.txt once (used by functions)
-const INFOR_PATH = path.join(__dirname, 'infor.txt');
+const INFOR_PATH = path.join(__dirname, 'data', 'output', 'text', 'infor.txt');
 let inforContent = '';
 try {
   inforContent = fs.readFileSync(INFOR_PATH, 'utf8');

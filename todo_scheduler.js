@@ -4,13 +4,13 @@ const { analyzeTask, verifyTaskCompletion } = require('./todo_analyzer');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { PATHS, initializeDirectories } = require('./paths');
 
-const LOGS_DIR = path.join(__dirname, 'logs');
-const SCHEDULER_LOG = path.join(LOGS_DIR, 'todo_scheduler.log');
+const SCHEDULER_LOG = path.join(PATHS.LOGS, 'todo_scheduler.log');
 
 // Ensure logs directory exists
-if (!fs.existsSync(LOGS_DIR)) {
-  fs.mkdirSync(LOGS_DIR, { recursive: true });
+if (!fs.existsSync(PATHS.LOGS)) {
+  fs.mkdirSync(PATHS.LOGS, { recursive: true });
 }
 
 function log(message) {
@@ -40,6 +40,9 @@ class TodoScheduler {
       log('[Scheduler] Already running');
       return;
     }
+
+    // Initialize output directories
+    initializeDirectories();
 
     log('[Scheduler] Starting...');
     this.isRunning = true;
@@ -183,8 +186,13 @@ class TodoScheduler {
     const researchTask = detectResearchToFileTask(task, analysis);
     const industryPlanTask = detectIndustryPlanTask(task, analysis);
     const articleSummaryTask = detectArticleSummaryTask(task, analysis);
+    const interviewTask = detectInterviewTask(task, analysis);
 
     try {
+      if (interviewTask) {
+        return executeInterviewTask(task, analysis, fileName);
+      }
+
       if (industryPlanTask && fileName) {
         return executeIndustryPlanTask(task, analysis, fileName);
       }
@@ -198,7 +206,7 @@ class TodoScheduler {
       }
 
       if (operation === 'create' && fileName) {
-        const filePath = path.join(process.cwd(), fileName);
+        const filePath = path.join(PATHS.TEXT_OUTPUT, fileName);
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, '', 'utf8');
         return {
@@ -453,8 +461,167 @@ function detectArticleSummaryTask(task, analysis) {
   return hasArticleUrl || signalCount >= 2;
 }
 
+function detectInterviewTask(task, analysis) {
+  const combinedText = [
+    task?.title || '',
+    task?.description || '',
+    ...(analysis?.execution_plan || []),
+    ...(analysis?.verification_criteria || [])
+  ].join(' ').toLowerCase();
+
+  const interviewSignals = [
+    'interview',
+    'survey',
+    'questionnaire',
+    'user research',
+    '訪談',
+    '訪問',
+    '問卷',
+    '調查',
+    '用戶研究',
+    '用户研究',
+    '使用者研究'
+  ];
+
+  return interviewSignals.some(signal => combinedText.includes(signal));
+}
+
+function executeInterviewTask(task, analysis, fileName) {
+  const defaultFileName = fileName || `interview-task-${task.id}.md`;
+  const filePath = path.join(PATHS.TEXT_OUTPUT, defaultFileName);
+  const content = buildInterviewTemplate(task, analysis);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, 'utf8');
+
+  return {
+    success: true,
+    action: 'generated_interview_template',
+    path: filePath,
+    steps_completed: analysis?.execution_plan || [],
+    timestamp: new Date().toISOString()
+  };
+}
+
+function buildInterviewTemplate(task, analysis) {
+  const useChinese = taskRequestsChinese(task, analysis);
+
+  if (useChinese) {
+    return buildInterviewTemplateZh(task, analysis);
+  }
+
+  const lines = [
+    '# User Interview / Survey Template',
+    '',
+    `## Original Task`,
+    `Title: ${task?.title || 'Interview Task'}`,
+    `Description: ${task?.description || 'No description provided'}`,
+    '',
+    '## Interview Objectives',
+    '- Understand user pain points and needs',
+    '- Identify key decision factors',
+    '- Gather qualitative feedback',
+    '- Validate assumptions',
+    '',
+    '## Suggested Interview Questions',
+    '',
+    '### Section 1: Background',
+    '1. Can you describe your current process?',
+    '2. How long have you been doing this?',
+    '3. What tools do you currently use?',
+    '',
+    '### Section 2: Pain Points',
+    '4. What are the biggest challenges you face?',
+    '5. How much time do you spend on this process?',
+    '6. What would make this process easier?',
+    '',
+    '### Section 3: Needs & Expectations',
+    '7. What would be your ideal solution?',
+    '8. What features are most important to you?',
+    '9. What would you be willing to pay?',
+    '',
+    '## Response Collection',
+    '',
+    '### Participant 1',
+    '- Name/ID: [To be filled]',
+    '- Date: [Interview date]',
+    '- Responses: [Notes]',
+    '',
+    '### Participant 2',
+    '- Name/ID: [To be filled]',
+    '- Date: [Interview date]',
+    '- Responses: [Notes]',
+    '',
+    '## Key Findings Summary',
+    '- Finding 1: [To be filled]',
+    '- Finding 2: [To be filled]',
+    '- Finding 3: [To be filled]',
+    '',
+    '---',
+    `Generated from task: ${task?.id}`,
+    `Timestamp: ${new Date().toISOString()}`
+  ];
+
+  return lines.join('\n') + '\n';
+}
+
+function buildInterviewTemplateZh(task, analysis) {
+  const lines = [
+    '# 用戶訪談 / 調查問卷範本',
+    '',
+    `## 原始任務`,
+    `標題: ${task?.title || '訪談任務'}`,
+    `描述: ${task?.description || '未提供描述'}`,
+    '',
+    '## 訪談目標',
+    '- 了解用戶的痛點和需求',
+    '- 識別關鍵決策因素',
+    '- 收集定性反饋',
+    '- 驗證假設',
+    '',
+    '## 建議的訪談問題',
+    '',
+    '### 第一部分：背景',
+    '1. 能否描述一下你目前的工作流程？',
+    '2. 你做這項工作已經多久了？',
+    '3. 你目前使用哪些工具？',
+    '',
+    '### 第二部分：痛點',
+    '4. 你面臨的最大挑戰是什麼？',
+    '5. 你在這個流程上花多少時間？',
+    '6. 什麼可以讓這個流程更簡單？',
+    '',
+    '### 第三部分：需求與期望',
+    '7. 你的理想解決方案是什麼？',
+    '8. 對你來說最重要的功能是什麼？',
+    '9. 你願意為此付出多少？',
+    '',
+    '## 回覆收集',
+    '',
+    '### 受訪者 1',
+    '- 姓名/ID：[待填充]',
+    '- 日期：[訪談日期]',
+    '- 回覆：[筆記]',
+    '',
+    '### 受訪者 2',
+    '- 姓名/ID：[待填充]',
+    '- 日期：[訪談日期]',
+    '- 回覆：[筆記]',
+    '',
+    '## 主要發現摘要',
+    '- 發現 1：[待填充]',
+    '- 發現 2：[待填充]',
+    '- 發現 3：[待填充]',
+    '',
+    '---',
+    `生成自任務：${task?.id}`,
+    `時間戳：${new Date().toISOString()}`
+  ];
+
+  return lines.join('\n') + '\n';
+}
+
 function executeIndustryPlanTask(task, analysis, fileName) {
-  const filePath = path.join(process.cwd(), fileName);
+  const filePath = path.join(PATHS.TEXT_OUTPUT, fileName);
   const content = buildIndustryPlanMarkdown(task, analysis);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, 'utf8');
@@ -680,8 +847,8 @@ async function executeArticleSummaryTask(task, analysis, fileName) {
 
   const summary = buildChineseArticleSummary(title, selectedPage);
   const outputPath = fileName
-    ? path.join(process.cwd(), fileName)
-    : path.join(process.cwd(), `article-summary-task-${task.id}.txt`);
+    ? path.join(PATHS.TEXT_OUTPUT, fileName)
+    : path.join(PATHS.TEXT_OUTPUT, `article-summary-task-${task.id}.txt`);
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, summary, 'utf8');
@@ -769,7 +936,7 @@ function toChineseBullet(text) {
 
 
 async function executeResearchToFileTask(task, analysis, fileName) {
-  const filePath = path.join(process.cwd(), fileName);
+  const filePath = path.join(PATHS.TEXT_OUTPUT, fileName);
   const query = buildResearchQuery(task, analysis);
   const searchResults = await searchTutorialPages(query);
 

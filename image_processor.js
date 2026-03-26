@@ -3,14 +3,14 @@ const path = require('path');
 const axios = require('axios');
 const sharp = require('sharp');
 require('dotenv').config();
+const { PATHS, initializeDirectories } = require('./paths');
 
 const SUPPORTED_FORMATS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
-const LOGS_DIR = path.join(__dirname, 'logs');
-const PROCESSOR_LOG = path.join(LOGS_DIR, 'image_processor.log');
+const PROCESSOR_LOG = path.join(PATHS.LOGS, 'image_processor.log');
 
 // Ensure logs directory exists
-if (!fs.existsSync(LOGS_DIR)) {
-  fs.mkdirSync(LOGS_DIR, { recursive: true });
+if (!fs.existsSync(PATHS.LOGS)) {
+  fs.mkdirSync(PATHS.LOGS, { recursive: true });
 }
 
 function log(message) {
@@ -28,8 +28,8 @@ function log(message) {
 
 class ImageProcessor {
   constructor() {
-    this.inputFolder = process.env.IMAGE_INPUT_FOLDER || 'job_img';
-    this.outputFolder = process.env.IMAGE_OUTPUT_FOLDER || 'job_img_ok';
+    this.inputFolder = process.env.IMAGE_INPUT_FOLDER || path.join(PATHS.IMAGES_OUTPUT, 'input');
+    this.outputFolder = process.env.IMAGE_OUTPUT_FOLDER || path.join(PATHS.IMAGES_OUTPUT, 'processed');
     this.apiUrl = process.env.IMAGE_AI_API_URL || 'https://ai3.aischool.edu.pl/v1/chat/completions';
     this.model = process.env.IMAGE_AI_MODEL || 'Qwen2-VL-2B-Instruct';
     this.intervalMs = parseInt(process.env.IMAGE_PROCESSOR_INTERVAL_MS) || 60000;
@@ -46,6 +46,9 @@ class ImageProcessor {
       log('[ImageProcessor] Already running');
       return;
     }
+
+    // Initialize output directories
+    initializeDirectories();
 
     // Ensure directories exist
     this.ensureDirectories();
