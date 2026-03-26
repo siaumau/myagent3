@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd C:/D/eric/myagent3 && npm install sharp)"
+    ]
+  }
+}

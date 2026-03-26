@@ -10,6 +10,7 @@ const mysql = require('mysql2/promise');
 const { fetchNews } = require('./news_fetcher');
 const todoService = require('./todo_service');
 const { scheduler } = require('./todo_scheduler');
+const { processor } = require('./image_processor');
 
 const app = express();
 app.use(express.json());
@@ -622,6 +623,11 @@ app.post('/call_function', async (req, res) => {
 async function initTodoSystem() {
   await todoService.initTable();
   scheduler.start();
+
+  // Start image processor if enabled
+  if (process.env.IMAGE_PROCESSOR_ENABLED === 'true') {
+    processor.start();
+  }
 }
 
 // Get all tasks
@@ -716,6 +722,25 @@ app.post('/api/todos/scheduler/start', (req, res) => {
 app.post('/api/todos/scheduler/stop', (req, res) => {
   scheduler.stop();
   res.json({ success: true, status: scheduler.getStatus() });
+});
+
+// ==================== Image Processor API Endpoints ====================
+
+// Get image processor status
+app.get('/api/image-processor/status', (req, res) => {
+  res.json({ success: true, status: processor.getStatus() });
+});
+
+// Start image processor manually
+app.post('/api/image-processor/start', (req, res) => {
+  processor.start();
+  res.json({ success: true, status: processor.getStatus() });
+});
+
+// Stop image processor manually
+app.post('/api/image-processor/stop', (req, res) => {
+  processor.stop();
+  res.json({ success: true, status: processor.getStatus() });
 });
 
 // ==================== Server Startup ====================
