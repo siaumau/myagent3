@@ -863,16 +863,16 @@ function buildResearchQuery(task, analysis) {
     .filter(Boolean)
     .join(' ');
 
-  // Clean up action words and special characters more aggressively
+  // Clean up only essential action words, preserve meaningful keywords
   const cleanText = allText
-    .replace(/\b[a-z0-9][a-z0-9._-]*\.[a-z0-9]{1,10}\b/gi, ' ')
-    .replace(/\u7576\u524d\u76ee\u9304|\u76ee\u524d\u76ee\u9304|current directory/gi, ' ')
-    .replace(/\u6a94\u6848\u540d\u7a31|\u6587\u4ef6\u540d|file name/gi, ' ')
-    .replace(/\u5b58\u5230|\u4fdd\u5b58\u5230|save to|write to/gi, ' ')
-    .replace(/\u6574\u7406\u6210|整理成|整理|存\u6a94|存档|存到|列表|清單/gi, ' ')
-    .replace(/\u7528\u4e2d\u6587|用中文/gi, ' ')
-    .replace(/\u5e6b\u6211|\u6211\u9700\u8981|\u5e2b\u6211|幫我|我要|給我|给我/gi, ' ')
-    .replace(/\u4e0a\u7db2|\u7db2\u8def|\u7db2\u4e0a|\u7db2\u8def\u4e0a|\u4e0a\u9762|網路|網上|在線|线上|搜索|蒐集|收集|查詢|查询|提取/gi, ' ')
+    .replace(/\b[a-z0-9][a-z0-9._-]*\.[a-z0-9]{1,10}\b/gi, ' ') // Remove URLs
+    .replace(/\u7576\u524d\u76ee\u9304|\u76ee\u524d\u76ee\u9304|current directory/gi, ' ') // Remove directory references
+    .replace(/\u6a94\u6848\u540d\u7a31|\u6587\u4ef6\u540d|file name/gi, ' ') // Remove file name references
+    .replace(/\u5b58\u5230|\u4fdd\u5b58\u5230|save to|write to|存\u6a94|存档|存到/gi, ' ') // Remove save/write verbs
+    .replace(/\u6574\u7406\u6210|整理成|整理|列表|清單/gi, ' ') // Remove organize verbs
+    .replace(/\u7528\u4e2d\u6587|用中文|in Chinese/gi, ' ') // Remove language directives
+    .replace(/\u5e6b\u6211|\u6211\u9700\u8981|\u5e2b\u6211|幫我|我要|給我|给我|please|find|look|search for/gi, ' ') // Remove request verbs
+    .replace(/搜索|蒐集|收集|查詢|查询|提取|extract/gi, ' ') // Only remove explicit search verbs
     .replace(/[\?,\.\!\;\:，。！；：\(\)（）\[\]\[\]「」『』【】]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -885,10 +885,10 @@ function buildResearchQuery(task, analysis) {
     topic = extractKeywordsTopic(cleanText);
   }
 
-  // Fallback to first few words if extraction didn't work well
+  // Fallback to first few words if extraction didn't work well, but keep more context
   if (!topic || topic.length > 30) {
     const words = cleanText.split(/\s+/).filter(w => w.length > 1);
-    topic = words.slice(0, 3).join(' ') || '資訊';
+    topic = words.slice(0, 5).join(' ') || '資訊'; // Increased from 3 to 5 words for better context
   }
 
   return topic;
@@ -1138,7 +1138,7 @@ async function fetchReadablePage(url, query) {
     });
 
     const html = typeof response.data === 'string' ? response.data : '';
-    if (!html || html.length < 100) {
+    if (!html || html.length < 50) { // Lowered from 100 to 50 for smaller pages
       log(`[Scheduler] Page too small or empty: ${url}`);
       return null;
     }
@@ -1147,7 +1147,7 @@ async function fetchReadablePage(url, query) {
     const title = titleMatch ? decodeHtmlEntities(stripHtml(titleMatch[1])).trim() : url;
     const text = htmlToText(html);
 
-    if (!text || text.length < 100) {
+    if (!text || text.length < 80) { // Lowered from 100 to 80 for better tolerance
       log(`[Scheduler] Extracted text too short: ${url}`);
       return null;
     }
@@ -1155,8 +1155,22 @@ async function fetchReadablePage(url, query) {
     const snippets = extractRelevantSnippets(text, query);
 
     if (!snippets || snippets.length === 0) {
-      log(`[Scheduler] No relevant snippets found: ${url}`);
-      return null;
+      // Instead of failing completely, return at least the first paragraph as fallback
+      log(`[Scheduler] No relevant snippets found, using fallback: ${url}`);
+      const fallbackSnippets = text
+        .split(/\n+/)
+        .map(line => line.trim())
+        .filter(line => line.length >= 40 && line.length <= 600)
+        .slice(0, 3); // Take first 3 paragraphs as fallback
+
+      if (fallbackSnippets.length === 0) {
+        return null;
+      }
+      return {
+        title,
+        url,
+        snippets: fallbackSnippets
+      };
     }
 
     log(`[Scheduler] Successfully fetched ${snippets.length} snippets from: ${url}`);
@@ -1202,11 +1216,14 @@ function htmlToText(html) {
         .replace(/<style[\s\S]*?<\/style>/gi, ' ')
         .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
         .replace(/<(br|\/p|\/li|\/h[1-6])[^>]*>/gi, '\n')
+        .replace(/<(div|section|article)[^>]*>/gi, '\n') // Treat major containers as line breaks
+        .replace(/<a[^>]*>/gi, '') // Remove link tags but keep content
     )
   )
     .replace(/\r/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]{2,}/g, ' ')
+    .replace(/^[\s\n]+|[\s\n]+$/g, '') // Better trim
     .trim();
 }
 
@@ -1229,31 +1246,65 @@ function extractRelevantSnippets(text, query) {
   const keywords = query
     .toLowerCase()
     .split(/\s+/)
-    .filter(word => word.length >= 3);
+    .filter(word => word.length >= 2); // Lowered from 3 to 2 for better matching
 
+  // If too few keywords, also include common content patterns
   const paragraphs = text
     .split(/\n+/)
     .map(line => line.trim())
-    .filter(line => line.length >= 60 && line.length <= 500);
+    .filter(line => line.length >= 40 && line.length <= 600); // Relaxed length constraints
+
+  if (paragraphs.length === 0) {
+    return [];
+  }
 
   const scored = paragraphs
-    .map(paragraph => ({
-      paragraph,
-      score: keywords.reduce((total, keyword) => (
-        paragraph.toLowerCase().includes(keyword) ? total + 1 : total
-      ), 0)
-    }))
-    .filter(item => item.score > 0)
+    .map(paragraph => {
+      const lowerPara = paragraph.toLowerCase();
+
+      // Calculate match score
+      let score = keywords.reduce((total, keyword) => (
+        lowerPara.includes(keyword) ? total + 1 : total
+      ), 0);
+
+      // Bonus for paragraphs containing multiple key characters/concepts
+      // This helps when queries are short or overly simplified
+      const contentQuality = (
+        (lowerPara.length > 80 ? 1 : 0) + // Good length
+        (/[\。！？\.\!\?]/.test(paragraph) ? 1 : 0) + // Has punctuation (actual sentence)
+        (/(為|为|原因|reason|为什么|為什麼|why)/.test(lowerPara) ? 1 : 0) + // Has relevance indicators
+        (/(人|group|人群)/.test(lowerPara) ? 1 : 0) // Has potential subject matter
+      );
+
+      // If keywords are too few, weight content quality more heavily
+      if (keywords.length <= 2) {
+        score = score * 0.5 + contentQuality;
+      }
+
+      return { paragraph, score };
+    })
+    .filter(item => item.score > 0) // Still require some relevance
     .sort((a, b) => b.score - a.score);
 
+  // If no high-relevance content found, include medium-quality content
+  if (scored.length === 0) {
+    scored.push(...paragraphs
+      .map((paragraph, idx) => ({
+        paragraph,
+        score: paragraphs.length - idx // Prefer earlier paragraphs as fallback
+      }))
+      .slice(0, 10));
+  }
+
+  // Deduplicate and collect results
   const unique = [];
   const seen = new Set();
   for (const item of scored) {
-    const normalized = item.paragraph.toLowerCase();
+    const normalized = item.paragraph.toLowerCase().substring(0, 100);
     if (seen.has(normalized)) continue;
     seen.add(normalized);
     unique.push(item.paragraph);
-    if (unique.length >= 6) break;
+    if (unique.length >= 8) break; // Increased from 6 to 8 for more comprehensive results
   }
 
   return unique;
