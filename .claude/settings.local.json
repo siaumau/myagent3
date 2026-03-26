@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cd C:/D/eric/myagent3 && npm install sharp)"
+      "Bash(cd C:/D/eric/myagent3 && npm install sharp)",
+      "Bash(find C:/D/eric/myagent3 -type f -name \"*.json\" -o -name \"*.txt\" -o -name \"*.log\" -o -name \"*.md\" 2>/dev/null | head -30)",
+      "Bash(find C:/D/eric/myagent3 -maxdepth 2 -type f -name \"*.js\" -o -name \"*.py\" 2>/dev/null | head -20)",
+      "Bash(cp logs/todo_scheduler.log data/output/logs/todo_scheduler.log)",
+      "Bash(cp infor.txt infor2.txt redis1.txt data/output/text/)",
+      "Bash(cd:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run:*)",
+      "Bash(DB_HOST=localhost DB_PORT=3306 DB_USER=root DB_PASSWORD=password DB_NAME=ai node reset_task.js 1)",
+      "Bash(DB_HOST=localhost DB_PORT=3306 DB_USER=root DB_PASSWORD=password DB_NAME=testdb node reset_task.js 1)",
+      "Bash(DB_HOST=localhost DB_PORT=3306 DB_USER=root DB_PASSWORD=password node -e \"const mysql = require\\(''mysql2/promise''\\); \\(async \\(\\) => { const conn = await mysql.createConnection\\({host: ''localhost'', port: 3306, user: ''root'', password: ''password''}\\); const [dbs] = await conn.query\\(''SHOW DATABASES''\\); console.log\\(dbs.map\\(d => d.Database\\)\\); await conn.end\\(\\); }\\)\\(\\)\")",
+      "Bash(DB_HOST=localhost DB_PORT=3306 DB_USER=root DB_PASSWORD=password DB_NAME=ai node -e \"const mysql = require\\(''mysql2/promise''\\); \\(async \\(\\) => { const conn = await mysql.createConnection\\({host: ''localhost'', port: 3306, user: ''root'', password: ''password'', database: ''ai''}\\); const [tables] = await conn.query\\(''SHOW TABLES''\\); console.log\\(tables.map\\(t => Object.values\\(t\\)[0]\\)\\); await conn.end\\(\\); }\\)\\(\\)\")",
+      "Bash(DB_HOST=localhost DB_PORT=3306 DB_USER=root DB_PASSWORD=password DB_NAME=ai node -e \":*)"
     ]
   }
 }
